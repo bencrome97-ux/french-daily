@@ -135,35 +135,63 @@ function presentExercise(card, verb, content, level, rng, seen) {
   const elided = slotIdx > 0 && s.toks[slotIdx - 1].glue;
   const decoys = formDecoys(verb, person, content, { seen, mustStartVowel: elided ? true : null });
 
+  // Level 0 (brand-new card): tell this verb's own forms apart, e.g. nous ___ : sommes / sont / êtes / est.
   if (level === 0) {
-    // Recognise: which verb is this form?
+    const own = [...new Set(verb.forms.filter((f, p) => p !== person && f !== correct && (verb.persons ?? [0, 1, 2, 3, 4, 5]).includes(p)))]
+      .sort((a, b) => distance(a, correct) - distance(b, correct))
+      .slice(0, 3);
+    if (own.length >= 2) {
+      const personOf = (f) => PERSON_LABELS[verb.forms.indexOf(f)];
+      // Swap in the closest form from a verb already met (es vs as), when there is one.
+      const cross = seen ? decoys.find((d) => d.verb.id !== verb.id && seen.has(d.verb.id) && !own.includes(d.form)) : null;
+      const opts = own.slice(0, cross ? 2 : 3).map((f) => ({ label: f, correct: false, why: `${f} is the ${personOf(f)} form` }));
+      if (cross) opts.push({ label: cross.form, correct: false, why: describeForm(cross) });
+      return {
+        ...base,
+        type: 'choose-person',
+        mode: 'choice',
+        tag: 'Fill the gap',
+        segs: segments(s.toks, 'blank'),
+        hint: `${verb.inf} · ${PERSON_LABELS[person]}`,
+        options: shuffle([{ label: correct, correct: true }, ...opts], rng),
+        explain: `${PERSON_LABELS[person]} → ${correct}. The full set: ${verb.forms.join(', ')}.`,
+      };
+    }
+    level = 1;
+  }
+
+  // "Which verb is this?" only makes sense once several verbs are known; options come only from those.
+  const knownOthers = seen ? [...seen].filter((id) => id !== verb.id && content.verbById.has(id)) : [];
+  if (level === 1 && knownOthers.length >= 3 && rng() < 0.35) {
     const others = [];
     const usedVerbs = new Set([verb.id]);
-    for (const d of formDecoys(verb, person, content, { seen, n: 12 })) {
-      if (usedVerbs.has(d.verb.id)) continue;
+    for (const d of formDecoys(verb, person, content, { seen, n: 60 })) {
+      if (usedVerbs.has(d.verb.id) || !seen.has(d.verb.id)) continue;
       if (d.verb.forms[person] === correct) continue; // e.g. sentir vs se sentir: same form, ambiguous
       usedVerbs.add(d.verb.id);
       others.push(d);
       if (others.length === 3) break;
     }
-    const options = shuffle(
-      [
-        { label: verb.inf, sub: verb.en, correct: true },
-        ...others.map((d) => ({ label: d.verb.inf, sub: d.verb.en, correct: false, why: `${d.verb.inf} (${d.verb.en}) would be ${d.verb.forms[person]} here` })),
-      ],
-      rng,
-    );
-    return {
-      ...base,
-      type: 'recognise',
-      mode: 'choice',
-      en: null, // hidden until answered, so the English doesn't give it away
-      revealEn: s.en,
-      tag: 'Which verb is this?',
-      segs: segments(s.toks, 'highlight'),
-      options,
-      explain: `${correct} = ${verb.inf} (${verb.en}), ${PERSON_LABELS[person]} form.`,
-    };
+    if (others.length >= 2) {
+      const options = shuffle(
+        [
+          { label: verb.inf, sub: verb.en, correct: true },
+          ...others.map((d) => ({ label: d.verb.inf, sub: d.verb.en, correct: false, why: `${d.verb.inf} (${d.verb.en}) would be ${d.verb.forms[person]} here` })),
+        ],
+        rng,
+      );
+      return {
+        ...base,
+        type: 'recognise',
+        mode: 'choice',
+        en: null, // hidden until answered, so the English doesn't give it away
+        revealEn: s.en,
+        tag: 'Which verb is this?',
+        segs: segments(s.toks, 'highlight'),
+        options,
+        explain: `${correct} = ${verb.inf} (${verb.en}), ${PERSON_LABELS[person]} form.`,
+      };
+    }
   }
   if (level === 1) {
     const options = shuffle(

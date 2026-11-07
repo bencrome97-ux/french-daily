@@ -42,7 +42,7 @@ export function planSession(content, progress, today, { rng = Math.random, extra
   const backlog = dueVerbs.length + dueWords.length > budget * 1.5;
   const newVLimit = extra ? 4 : Math.max(0, (backlog ? 3 : settings.newVerbCards) - (dayLog.newV ?? 0));
   const newWLimit = extra ? 4 : Math.max(0, (backlog ? 3 : settings.newWords) - (dayLog.newW ?? 0));
-  const newV = verbs.filter((c) => !st(c)?.reps).slice(0, newVLimit);
+  const newV = pickNewVerbCards(verbs.filter((c) => !st(c)?.reps), newVLimit);
   const newW = words.filter((c) => !st(c)?.reps).slice(0, newWLimit);
 
   // Verb stream: reviews shuffled, new cards kept in order (grouped per verb after an intro).
@@ -63,6 +63,35 @@ export function planSession(content, progress, today, { rng = Math.random, extra
       out.push({ kind: 'intro', verbId: card.verbId });
     }
     out.push({ kind: 'card', card });
+  }
+  return out;
+}
+
+/**
+ * New verb cards, alternating between two verbs at a time (être, avoir, être, avoir…) so new forms are
+ * always contrasted with another verb's forms instead of arriving as six of the same verb in a row.
+ */
+export function pickNewVerbCards(unstarted, limit) {
+  const groups = [];
+  const byVerb = new Map();
+  for (const c of unstarted) {
+    if (!byVerb.has(c.verbId)) {
+      byVerb.set(c.verbId, []);
+      groups.push(byVerb.get(c.verbId));
+    }
+    byVerb.get(c.verbId).push(c);
+  }
+  const out = [];
+  const active = groups.slice(0, 2);
+  let next = 2;
+  while (out.length < limit && active.length) {
+    for (let i = 0; i < active.length && out.length < limit; i++) {
+      out.push(active[i].shift());
+      if (!active[i].length) {
+        if (next < groups.length) active[i] = groups[next++];
+        else active.splice(i--, 1);
+      }
+    }
   }
   return out;
 }

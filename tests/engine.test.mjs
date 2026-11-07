@@ -109,10 +109,9 @@ test('decoys after elided subject start with a vowel', () => {
 test('exercise ladder for a verb card', () => {
   const card = { id: 'v:aller:2', kind: 'vp', verbId: 'aller', person: 2 };
   const e0 = makeExercise(card, undefined, content, { level: 0, rng: first });
-  assert.equal(e0.type, 'recognise');
-  assert.equal(e0.options.filter((o) => o.correct)[0].label, 'aller');
-  assert.ok(e0.segs.some((s) => s.t === 'hl' && s.v === 'va'));
-  const e1 = makeExercise(card, undefined, content, { level: 1, rng: first });
+  assert.equal(e0.type, 'choose-person');
+  assert.equal(e0.options.filter((o) => o.correct)[0].label, 'va');
+  const e1 = makeExercise(card, undefined, content, { level: 1, rng: () => 0.9 });
   assert.equal(e1.type, 'choose-form');
   assert.equal(e1.options.length, 4);
   assert.equal(new Set(e1.options.map((o) => o.label)).size, 4);
@@ -122,6 +121,50 @@ test('exercise ladder for a verb card', () => {
   assert.equal(e2.tiles.length, 6);
   const e3 = makeExercise(card, undefined, content, { level: 3, rng: first });
   assert.deepEqual(e3.accepted, ['va']);
+});
+
+test('a brand-new verb card drills the verb’s own forms, not "which verb"', () => {
+  const card = { id: 'v:aller:3', kind: 'vp', verbId: 'aller', person: 3 };
+  const e = makeExercise(card, undefined, content, { seen: new Set(['aller']), rng: () => 0.3 });
+  assert.equal(e.type, 'choose-person');
+  assert.equal(e.options.find((o) => o.correct).label, 'allons');
+  assert.ok(e.options.every((o) => aller.forms.includes(o.label)), e.options.map((o) => o.label).join(','));
+  // With another verb already known, one option is that verb's lookalike.
+  const e2 = makeExercise({ id: 'v:aller:1', kind: 'vp', verbId: 'aller', person: 1 }, undefined, content, { seen: new Set(['aller', 'avoir']), rng: () => 0.3 });
+  assert.ok(e2.options.some((o) => o.label === 'as'), e2.options.map((o) => o.label).join(','));
+  assert.equal(new Set(e.options.map((o) => o.label)).size, e.options.length);
+});
+
+test('"which verb" only appears with enough known verbs, using only known verbs as options', () => {
+  const card = { id: 'v:aller:2', kind: 'vp', verbId: 'aller', person: 2 };
+  const learning = { reps: 1, s: 2 };
+  for (const seed of [0.05, 0.3, 0.6, 0.9]) {
+    const few = makeExercise(card, learning, content, { seen: new Set(['aller', 'avoir']), rng: () => seed, level: 1 });
+    assert.notEqual(few.type, 'recognise');
+  }
+  const seen = new Set(['aller', 'avoir', 'voir', 'habiter']);
+  let sawRecognise = false;
+  for (const seed of [0.05, 0.1, 0.2, 0.3]) {
+    const e = makeExercise(card, learning, content, { seen, rng: () => seed, level: 1 });
+    if (e.type === 'recognise') {
+      sawRecognise = true;
+      assert.ok(e.options.every((o) => o.correct || [...seen].some((id) => content.verbById.get(id).inf === o.label)));
+    }
+  }
+  assert.ok(sawRecognise);
+});
+
+test('first session interleaves the first two new verbs', () => {
+  const progress = { cards: {}, days: {}, settings: { newVerbCards: 8, newWords: 0 } };
+  const plan = planSession(content, progress, 500, { rng: first });
+  const ids = plan.filter((q) => q.kind === 'card').map((q) => q.card.verbId);
+  assert.deepEqual(ids.slice(0, 4), ['aller', 'avoir', 'aller', 'avoir']);
+  assert.equal(plan.filter((q) => q.kind === 'intro').length, 2);
+  // Each verb is introduced right before its first card.
+  for (const id of ['aller', 'avoir']) {
+    const i = plan.findIndex((q) => q.kind === 'card' && q.card.verbId === id);
+    assert.ok(plan.slice(0, i).some((q) => q.kind === 'intro' && q.verbId === id));
+  }
 });
 
 test('passé composé exercises', () => {

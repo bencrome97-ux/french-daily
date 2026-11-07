@@ -1,5 +1,5 @@
 // Offline support: app shell cached; content + fonts cached as they're fetched.
-const VERSION = 'fd-v1';
+const VERSION = 'fd-v2';
 const SHELL = [
   './',
   'index.html',
